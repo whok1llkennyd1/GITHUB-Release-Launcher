@@ -5,19 +5,39 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Files
-        run: find . -not -path './.git/*' | head -50
       - name: Build
+        shell: bash
         run: |
-          set -e
           PKG=$(dirname "$(find . -name Package.swift -not -path '*/.build/*' | head -1)")
           cd "$PKG"
-          swift build -c release --arch arm64 --arch x86_64
+          ls -la
+          swift --version
+          LOG="$RUNNER_TEMP/build.log"
+          if ! swift build -c release --arch arm64 --arch x86_64 > "$LOG" 2>&1; then
+            { grep -E "error" "$LOG" | head -8; tail -3 "$LOG"; } | while IFS= read -r l; do echo "::error::${l}"; done
+            tail -20 "$LOG"
+            exit 1
+          fi
           BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/ReleaseLauncher"
           APP="Release Launcher.app"
           mkdir -p "$APP/Contents/MacOS"
           cp "$BIN" "$APP/Contents/MacOS/ReleaseLauncher"
-          cp Info.plist "$APP/Contents/Info.plist"
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key><string>ReleaseLauncher</string>
+              <key>CFBundleIdentifier</key><string>local.release-launcher</string>
+              <key>CFBundleName</key><string>Release Launcher</string>
+              <key>CFBundlePackageType</key><string>APPL</string>
+              <key>CFBundleShortVersionString</key><string>1.0</string>
+              <key>CFBundleVersion</key><string>1</string>
+              <key>LSMinimumSystemVersion</key><string>12.0</string>
+              <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
           codesign --force --deep --sign - "$APP"
           ditto -c -k --keepParent "$APP" "$GITHUB_WORKSPACE/ReleaseLauncher-universal.zip"
       - uses: actions/upload-artifact@v4
