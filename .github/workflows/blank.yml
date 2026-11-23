@@ -5,8 +5,21 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - run: bash build.sh
-      - run: ditto -c -k --keepParent "Release Launcher.app" ReleaseLauncher-universal.zip
+      - name: Files
+        run: find . -not -path './.git/*' | head -50
+      - name: Build
+        run: |
+          set -e
+          PKG=$(dirname "$(find . -name Package.swift -not -path '*/.build/*' | head -1)")
+          cd "$PKG"
+          swift build -c release --arch arm64 --arch x86_64
+          BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/ReleaseLauncher"
+          APP="Release Launcher.app"
+          mkdir -p "$APP/Contents/MacOS"
+          cp "$BIN" "$APP/Contents/MacOS/ReleaseLauncher"
+          cp Info.plist "$APP/Contents/Info.plist"
+          codesign --force --deep --sign - "$APP"
+          ditto -c -k --keepParent "$APP" "$GITHUB_WORKSPACE/ReleaseLauncher-universal.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: ReleaseLauncher-universal
